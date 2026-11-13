@@ -339,6 +339,7 @@ def get_args():
         help='path where to save, empty for no saving')
     parser.add_argument(
         '--log_dir', default=None, help='path where to tensorboard log')
+    utils.add_wandb_args(parser)
     parser.add_argument(
         '--device',
         default='cuda',
@@ -453,9 +454,11 @@ def main(args, ds_init):
     else:
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
+    use_wandb = utils.init_wandb(args)
     if global_rank == 0 and args.log_dir is not None:
         os.makedirs(args.log_dir, exist_ok=True)
-        log_writer = utils.TensorboardLogger(log_dir=args.log_dir)
+        log_writer = utils.TensorboardLogger(
+            log_dir=args.log_dir, use_wandb=use_wandb)
     else:
         log_writer = None
 

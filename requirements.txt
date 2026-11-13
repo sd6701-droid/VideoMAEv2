@@ -6,6 +6,7 @@ matplotlib
 numpy
 opencv-python
 pandas
+PyYAML
 Pillow
 scipy
 tensorboard==2.9.0
@@ -15,3 +16,4 @@ torch>=1.2
 torchaudio
 torchvision
 triton==1.0.0
+wandb

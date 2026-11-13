@@ -182,11 +182,65 @@ class MetricLogger(object):
             header, total_time_str, total_time / len(iterable)))
 
 
+def add_wandb_args(parser):
+    group = parser.add_argument_group('Weights & Biases')
+    group.add_argument(
+        '--wandb_project',
+        default=None,
+        type=str,
+        help='wandb project name; wandb logging is enabled only when set')
+    group.add_argument('--wandb_entity', default=None, type=str)
+    group.add_argument('--wandb_run_name', default=None, type=str)
+    group.add_argument(
+        '--wandb_run_id',
+        default=None,
+        type=str,
+        help='set to continue an existing wandb run when resuming')
+    group.add_argument('--wandb_tags', default=None, type=str, nargs='+')
+    group.add_argument(
+        '--wandb_mode',
+        default='online',
+        choices=['online', 'offline', 'disabled'])
+    return parser
+
+
+def init_wandb(args):
+    """Start a wandb run on the main process. Returns True if wandb is active."""
+    if not args.wandb_project or not is_main_process():
+        return False
+    import wandb
+    wandb.init(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        name=args.wandb_run_name,
+        id=args.wandb_run_id,
+        resume='allow' if args.wandb_run_id else None,
+        tags=args.wandb_tags,
+        mode=args.wandb_mode,
+        dir=args.log_dir or args.output_dir or None,
+        config={
+            k: v
+            for k, v in vars(args).items()
+            if isinstance(v, (str, int, float, bool, list, tuple, type(None)))
+        })
+    # train-step metrics are plotted against global_step, per-epoch eval
+    # metrics (head="perf", logged with step=epoch) against epoch
+    wandb.define_metric('global_step')
+    wandb.define_metric('epoch')
+    wandb.define_metric('perf/*', step_metric='epoch')
+    wandb.define_metric('*', step_metric='global_step')
+    return True
+
+
 class TensorboardLogger(object):
 
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, use_wandb=False):
         self.writer = SummaryWriter(logdir=log_dir)
         self.step = 0
+        self.wandb = None
+        if use_wandb:
+            import wandb
+            self.wandb = wandb
 
     def set_step(self, step=None):
         if step is not None:
@@ -195,6 +249,7 @@ class TensorboardLogger(object):
             self.step += 1
 
     def update(self, head='scalar', step=None, **kwargs):
+        wandb_payload = {}
         for k, v in kwargs.items():
             if v is None:
                 continue
@@ -203,6 +258,13 @@ class TensorboardLogger(object):
             assert isinstance(v, (float, int))
             self.writer.add_scalar(head + "/" + k, v,
                                    self.step if step is None else step)
+            wandb_payload[head + "/" + k] = v
+        if self.wandb is not None and wandb_payload:
+            if step is None:
+                wandb_payload['global_step'] = self.step
+            else:
+                wandb_payload['epoch'] = step
+            self.wandb.log(wandb_payload)
 
     def flush(self):
         self.writer.flush()

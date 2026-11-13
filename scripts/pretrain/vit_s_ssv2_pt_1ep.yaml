@@ -1,0 +1,56 @@
+# VideoMAE V2 ViT-S self-supervised pre-training on Something-Something V2, 1 epoch.
+# 1. Build the list file:
+#      python scripts/data/ssv2_json_to_pretrain_list.py \
+#        --json /gpfs/scratch/sd6701/personal/salt/datasets/ssv2/labels/train.json \
+#        --video_dir <folder with the .webm files> \
+#        --out /gpfs/scratch/sd6701/personal/salt/datasets/ssv2/pretrain_train.txt
+# 2. Launch:
+#      python scripts/run_from_yaml.py scripts/pretrain/vit_s_ssv2_pt_1ep.yaml
+#
+# Keys under `args` map 1:1 to flags of run_mae_pretraining.py.
+
+launcher:
+  script: run_mae_pretraining.py
+  nproc_per_node: 1          # GPUs on this machine
+  nnodes: 1
+
+args:
+  # ---- data ----
+  data_path: /gpfs/scratch/sd6701/personal/salt/datasets/ssv2/pretrain_train.txt
+  data_root: ""              # list file already holds absolute paths
+  fname_tmpl: "img_{:05}.jpg"  # only used for rawframes
+  num_frames: 16
+  sampling_rate: 2           # SSv2 clips are short (~45 frames); 2 is what the repo uses for SSv2
+  num_sample: 4              # repeated augmentation: 4 views per decoded clip
+  num_workers: 10
+
+  # ---- model / masking ----
+  model: pretrain_videomae_small_patch16_224
+  decoder_depth: 4
+  mask_type: tube
+  mask_ratio: 0.9
+  decoder_mask_type: run_cell
+  decoder_mask_ratio: 0.5
+
+  # ---- schedule: 1 epoch ----
+  epochs: 1
+  warmup_epochs: 0           # must be < epochs, otherwise the LR scheduler crashes
+  save_ckpt_freq: 1
+
+  # ---- optimisation ----
+  batch_size: 32             # per GPU (x num_sample views)
+  opt: adamw
+  opt_betas: [0.9, 0.95]
+  lr: 1.0e-3                 # base LR, scaled by total_batch/256 in the script
+
+  # ---- output ----
+  output_dir: /gpfs/scratch/sd6701/personal/salt/work_dir/vit_s_ssv2_pt_1ep
+  log_dir: /gpfs/scratch/sd6701/personal/salt/work_dir/vit_s_ssv2_pt_1ep
+
+  # ---- Weights & Biases (remove wandb_project to disable) ----
+  wandb_project: videomaev2
+  wandb_entity: null
+  wandb_run_name: vit_s_ssv2_pt_1ep
+  wandb_run_id: null
+  wandb_tags: [ssv2, vit_s, pretrain]
+  wandb_mode: online         # offline if compute nodes have no internet
